@@ -79,6 +79,16 @@ git commit -m "[ClassName] Brief description of change"
 git push origin feature/your-branch-name
 ```
 
+If you want to keep commits separate per class, stage individual files 
+rather than using `git add .`. For example:
+
+```bash
+git add src/borneofresh/model/ClassName.java
+git commit -m "[ClassName] Brief description of change"
+```
+
+This keeps the commit history clean and traceable to a single class 
+per commit.
 ---
 
 ## Commit Message Format
@@ -157,6 +167,41 @@ public class Customer extends User { ... }
 - Do not leave commented-out code or debug print statements in your final submission.
 
 ---
+
+## Troubleshooting
+
+### Branch does not exist locally
+
+If you see the following error when pushing:
+
+```
+error: src refspec feature/memberX does not match any
+error: failed to push some refs to '...'
+```
+
+This means your local machine does not have the branch created yet, 
+even though it exists on GitHub. Fix it by running:
+
+```bash
+git checkout -b feature/memberX
+git push origin feature/memberX
+```
+
+Replace `memberX` with your assigned branch name. From this point 
+forward, all commits should be pushed to this branch.
+
+### Commit went to the wrong branch
+
+If you accidentally commit to `main` locally instead of your feature 
+branch, do not panic. Run the following to move to your branch and 
+carry the commit with you:
+
+```bash
+git checkout -b feature/memberX
+git push origin feature/memberX
+```
+
+Your commit will be included in the push.
 
 ## Questions
 
