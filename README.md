@@ -160,4 +160,3 @@ public class Customer extends User { ... }
 ## Questions
 
 If you are unsure about any implementation detail, refer to the UML Class Diagram first. If your question is not answered there, message the lecturer or any members before making assumptions. Do not change class names, method signatures, or package structure without group agreement, as this will break everyone else's code.
-```
