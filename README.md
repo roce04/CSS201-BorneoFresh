@@ -127,12 +127,13 @@ The repository owner will push this structure to `main` before coding begins. Pu
 
 ```
 CSS201-BorneoFresh/
-├── src/
-│   └── borneofresh/
-│       ├── model/       ← All entity classes (User, Product, Order, etc.)
-│       ├── system/      ← Controller classes (BorneoFreshSystem, ProductCatalogue, etc.)
-│       └── test/        ← JUnit test classes
-└── README.md
+  src/
+    borneofresh/
+      model/     - All entity classes (User, Product, Order, and subclasses)
+      system/    - Controller classes (BorneoFreshSystem, ProductCatalogue, etc.)
+      test/      - JUnit test classes
+  docs/
+  README.md
 ```
 
 ---
