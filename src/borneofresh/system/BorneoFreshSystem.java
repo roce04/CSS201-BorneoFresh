@@ -1,15 +1,6 @@
 package borneofresh.system;
 
 import borneofresh.model.*;
-import borneofresh.model.Administrator;
-import borneofresh.model.Customer;
-import borneofresh.model.DailyEssential;
-import borneofresh.model.FreshProduce;
-import borneofresh.model.Order;
-import borneofresh.model.OrderItem;
-import borneofresh.model.OrganicProduct;
-import borneofresh.model.Product;
-import borneofresh.model.User;
 
 import java.util.Scanner;
 
@@ -31,6 +22,7 @@ public class BorneoFreshSystem {
     // --- Attributes ---
     private ProductCatalogue catalogue;
     private CustomerRegistry registry;
+    private PromotionCatalogue promotionCatalogue;
     private Scanner scanner;
 
     // Hardcoded admin credentials — in a real system these would come
@@ -43,6 +35,7 @@ public class BorneoFreshSystem {
     public BorneoFreshSystem() {
         this.catalogue = new ProductCatalogue();
         this.registry  = new CustomerRegistry();
+        this.promotionCatalogue = new PromotionCatalogue();
         this.scanner   = new Scanner(System.in);
         seedData();
     }
@@ -65,6 +58,10 @@ public class BorneoFreshSystem {
         catalogue.addProduct(new OrganicProduct("P03", "Organic Spinach", 4.00, true, "ORG-9921"));
         catalogue.addProduct(new DailyEssential("P04", "Milk",           3.20, true,  "1 Liter"));
         catalogue.addProduct(new DailyEssential("P05", "Eggs",           5.50, true,  "12 pieces"));
+        promotionCatalogue.addPromotion(new Promotion("PR01", "10% Off All Orders", 
+            new PercentageDiscount(0.10)));
+        promotionCatalogue.addPromotion(new Promotion("PR02", "RM3 Off Your Order",
+            new FlatDiscount(3.00)));
 
         // Demo customer — password is "pass123"
         registry.registerCustomer(
@@ -177,9 +174,9 @@ public class BorneoFreshSystem {
     }
 
     /**
-     * Displays and handles the Administrator dashboard.
-     * Loops until the admin logs out.
-     */
+    * Displays and handles the Administrator dashboard.
+    * Loops until the admin logs out.
+    */
     public void showAdminMenu(Administrator admin) {
         boolean adminRunning = true;
 
@@ -188,7 +185,13 @@ public class BorneoFreshSystem {
             System.out.println("Logged in as Admin: " + admin.getAdminId());
             System.out.println("1. View All Products");
             System.out.println("2. View Registered Customers");
-            System.out.println("3. Logout");
+            System.out.println("3. Add Product");
+            System.out.println("4. Update Product");
+            System.out.println("5. View Available Products");
+            System.out.println("6. View Unavailable Products");
+            System.out.println("7. Add Promotion");
+            System.out.println("8. View All Promotions");
+            System.out.println("9. Logout");
             System.out.print("Select an option: ");
 
             String choice = scanner.nextLine().trim();
@@ -201,11 +204,29 @@ public class BorneoFreshSystem {
                     registry.displayAllCustomers();
                     break;
                 case "3":
+                    addProductFlow(admin);
+                    break;
+                case "4":
+                    updateProductFlow(admin);
+                    break;
+                case "5":
+                    catalogue.getAvailableProducts().forEach(Product::displayInfo);
+                    break;
+                case "6":
+                    catalogue.getUnavailableProducts().forEach(Product::displayInfo);
+                    break;
+                case "7":
+                    addPromotionFlow();
+                    break;
+                case "8":
+                    promotionCatalogue.displayAllPromotions();
+                    break;
+                case "9":
                     System.out.println("Logging out admin...");
                     adminRunning = false;
                     break;
                 default:
-                    System.out.println("Invalid option. Please enter 1, 2, or 3.");
+                    System.out.println("Invalid option. Please try again.");
             }
         }
     }
@@ -214,85 +235,322 @@ public class BorneoFreshSystem {
      * Displays and handles the Customer dashboard.
      * Loops until the customer logs out.
      */
-    public void showCustomerMenu(Customer customer) {
-        boolean customerRunning = true;
+    private void showCustomerMenu(Customer customer) {
+    // Create ONE cart for this entire login session.
+    // This is what was missing — the Cart was never created.
+    Cart cart = new Cart(customer);
 
-        while (customerRunning) {
-            System.out.println("\n=== Customer Dashboard ===");
-            System.out.println("Welcome back, " + customer.getFullName() + "!");
-            System.out.println("1. Browse Products");
-            System.out.println("2. Place an Order");
-            System.out.println("3. View Order History");
-            System.out.println("4. Logout");
-            System.out.print("Select an option: ");
+    boolean running = true;
+    while (running) {
+        System.out.println("\n=== Customer Dashboard ===");
+        System.out.println("Welcome back, " + customer.getFullName() + "!");
+        System.out.println("1. Browse Products");
+        System.out.println("2. Add Item to Cart");      // replaces old "Place an Order"
+        System.out.println("3. View Cart");
+        System.out.println("4. Checkout");
+        System.out.println("5. View Order History");
+        System.out.println("6. View My Account");
+        System.out.println("7. Logout");
+        System.out.print("Select an option: ");
 
-            String choice = scanner.nextLine().trim();
+        String choice = scanner.nextLine().trim();
 
-            switch (choice) {
-                case "1":
-                    catalogue.displayAllProducts();
-                    break;
-                case "2":
-                    placeOrder(customer);
-                    break;
-                case "3":
-                    customer.viewOrderHistory();
-                    break;
-                case "4":
-                    System.out.println("Logging out...");
-                    customerRunning = false;
-                    break;
-                default:
-                    System.out.println("Invalid option. Please enter 1, 2, 3, or 4.");
+        switch (choice) {
+            case "1":
+                // Just browse — show everything available
+                catalogue.displayAllProducts();
+                break;
+
+            case "2":
+                // ADD TO CART — this is the key new flow
+                catalogue.displayAllProducts();
+                System.out.print("Enter the Product ID to add to cart: ");
+                String pid = scanner.nextLine().trim();
+                Product chosen = catalogue.getProductById(pid);
+
+                if (chosen == null) {
+                    System.out.println("Product not found.");
+                } else if (!chosen.isAvailable()) {
+                    System.out.println("Sorry, that product is currently unavailable.");
+                } else {
+                    System.out.print("Enter quantity: ");
+                    try {
+                        int qty = Integer.parseInt(scanner.nextLine().trim());
+                        cart.addItem(chosen, qty);  // Cart handles duplicate merging
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid quantity entered.");
+                    }
+                }
+                break;
+
+            case "3":
+                // VIEW CART — customer can see everything before committing
+                cart.displayCart();
+                System.out.println("\nWould you like to remove an item? (yes/no)");
+                if (scanner.nextLine().trim().equalsIgnoreCase("yes")) {
+                    System.out.print("Enter Product ID to remove: ");
+                    cart.removeItem(scanner.nextLine().trim());
+                }
+                break;
+
+            case "4":
+                // CHECKOUT — only now do we create an Order
+                if (cart.isEmpty()) {
+                    System.out.println("Your cart is empty. Add some items first!");
+                } else {
+                    cart.displayCart();
+
+                    // Apply a promotion if any are active
+                    promotionCatalogue.displayAllPromotions();
+                    System.out.print("Enter promotion ID to apply (or press Enter to skip): ");
+                    String promoId = scanner.nextLine().trim();
+                    double total = cart.getRunningTotal();
+
+                    if (!promoId.isEmpty()) {
+                        Promotion promo = promotionCatalogue.getPromotionById(promoId);
+                        if (promo != null && promo.isActive()) {
+                            total = promo.applyPromotion(total);
+                            System.out.printf("Promotion applied! New total: RM %.2f%n", total);
+                        } else {
+                            System.out.println("Promotion not found or inactive.");
+                        }
+                    }
+
+                    System.out.print("Confirm order? (yes/no): ");
+                    if (scanner.nextLine().trim().equalsIgnoreCase("yes")) {
+                        // Generate a unique order ID using timestamp
+                        String orderId = "ORD" + System.currentTimeMillis();
+                        String date = java.time.LocalDate.now().toString();
+                        cart.checkout(orderId, date); // Cart builds Order, calls customer.placeOrder()
+                    } else {
+                        System.out.println("Order cancelled.");
+                    }
+                }
+                break;
+
+            case "5":
+                customer.viewOrderHistory();
+                break;
+
+            case "6":
+                customer.displayInfo();
+                break;
+
+            case "7":
+                System.out.println("Logging out...");
+                running = false;
+                break;
+
+            default:
+                System.out.println("Invalid option. Please try again.");
+        }
+    }
+}
+
+    /**
+ * Guides the customer through selecting a product and quantity,
+ * optionally applying an active promotion, and recording the
+ * completed order in the customer's order history.
+ */
+private void placeOrder(Customer customer) {
+    System.out.println("\n--- Place an Order ---");
+    catalogue.displayAllProducts();
+
+    System.out.print("Enter the Product ID you want to buy: ");
+    String productId = scanner.nextLine().trim();
+
+    Product p = catalogue.getProductById(productId);
+    if (p == null) {
+        System.out.println("Product not found. Please check the ID and try again.");
+        return;
+    }
+
+    if (!p.isAvailable()) {
+        System.out.println("Sorry, that product is currently unavailable.");
+        return;
+    }
+
+    System.out.print("Enter quantity: ");
+    int qty;
+    try {
+        qty = Integer.parseInt(scanner.nextLine().trim());
+        if (qty <= 0) {
+            System.out.println("Quantity must be greater than zero.");
+            return;
+        }
+    } catch (NumberFormatException e) {
+        System.out.println("Invalid quantity. Please enter a whole number.");
+        return;
+    }
+
+    String orderId = "ORD" + (System.currentTimeMillis() % 10000);
+    Order newOrder = new Order(orderId, customer, java.time.LocalDate.now().toString());
+    newOrder.addItem(new OrderItem(p, qty));
+    newOrder.displayOrderSummary();
+
+    // Show active promotions and allow the customer to apply one
+    java.util.List<Promotion> activePromos = promotionCatalogue.getActivePromotions();
+    double finalTotal = newOrder.getTotalCost();
+
+    if (!activePromos.isEmpty()) {
+        System.out.println("\n===== Available Promotions =====");
+        for (Promotion promo : activePromos) {
+            promo.displayInfo();
+        }
+        System.out.print("Enter promotion ID to apply (or press Enter to skip): ");
+        String promoId = scanner.nextLine().trim();
+        if (!promoId.isEmpty()) {
+            Promotion selected = promotionCatalogue.getPromotionById(promoId);
+            if (selected != null && selected.isActive()) {
+                finalTotal = selected.applyPromotion(newOrder.getTotalCost());
+                System.out.printf("Promotion applied! New total: RM %.2f%n", finalTotal);
+            } else {
+                System.out.println("Promotion not found or inactive. No discount applied.");
             }
         }
     }
 
-    /**
-     * Guides the customer through selecting a product and quantity,
-     * creates an Order with one OrderItem, and records it in the
-     * customer's order history.
-     *
-     * Order ID is generated from the last four digits of the current
-     * timestamp — sufficient for a demo; a UUID would be better in
-     * a production system.
+    System.out.print("Confirm order? (yes/no): ");
+    String confirm = scanner.nextLine().trim();
+    if (confirm.equalsIgnoreCase("yes") || confirm.equalsIgnoreCase("y")) {
+        customer.placeOrder(newOrder);
+        System.out.printf("Order confirmed! You paid: RM %.2f%n", finalTotal);
+    } else {
+        System.out.println("Order cancelled.");
+    }
+}
+
+        /**
+     * Handles the add product flow for administrators.
+     * Prompts for product type and details, then creates the appropriate
+     * Product subclass and adds it to the catalogue.
      */
-    private void placeOrder(Customer customer) {
-        System.out.println("\n--- Place an Order ---");
-        catalogue.displayAllProducts();
+    private void addProductFlow(Administrator admin) {
+        System.out.println("\n===== Add New Product =====");
+        System.out.println("Product type: 1. Fresh Produce  2. Organic Product  3. Daily Essential");
+        System.out.print("Enter type: ");
+        String type = scanner.nextLine().trim();
 
-        System.out.print("Enter the Product ID you want to buy: ");
-        String productId = scanner.nextLine().trim();
-
-        Product p = catalogue.getProductById(productId);
-        if (p == null) {
-            System.out.println("Product not found. Please check the ID and try again.");
-            return;
-        }
-
-        if (!p.isAvailable()) {
-            System.out.println("Sorry, that product is currently unavailable.");
-            return;
-        }
-
-        System.out.print("Enter quantity: ");
-        int qty;
+        System.out.print("Enter product ID: ");
+        String id = scanner.nextLine().trim();
+        System.out.print("Enter product name: ");
+        String name = scanner.nextLine().trim();
+        System.out.print("Enter price (RM): ");
+        double price;
         try {
-            qty = Integer.parseInt(scanner.nextLine().trim());
-            if (qty <= 0) {
-                System.out.println("Quantity must be greater than zero.");
+            price = Double.parseDouble(scanner.nextLine().trim());
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid price. Product not added.");
+            return;
+        }
+        System.out.print("Is available? (true/false): ");
+        boolean available = Boolean.parseBoolean(scanner.nextLine().trim());
+
+        Product product = null;
+        switch (type) {
+            case "1":
+                System.out.print("Enter expiry date: ");
+                product = new FreshProduce(id, name, price, available,
+                        scanner.nextLine().trim());
+                break;
+            case "2":
+                System.out.print("Enter certification code: ");
+                product = new OrganicProduct(id, name, price, available,
+                        scanner.nextLine().trim());
+                break;
+            case "3":
+                System.out.print("Enter unit (e.g. 1kg, 500ml): ");
+                product = new DailyEssential(id, name, price, available,
+                        scanner.nextLine().trim());
+                break;
+            default:
+                System.out.println("Invalid product type.");
+                return;
+        }
+        admin.addProduct(catalogue, product);
+    }
+
+    /**
+     * Handles the update product flow for administrators.
+     * Finds the product by ID and allows updating name, price,
+     * and availability individually.
+     */
+    private void updateProductFlow(Administrator admin) {
+        System.out.print("\nEnter the product ID to update: ");
+        String productId = scanner.nextLine().trim();
+        Product existing = catalogue.getProductById(productId);
+
+        if (existing == null) {
+            System.out.println("Product not found.");
+            return;
+        }
+
+        existing.displayInfo();
+
+        System.out.print("New name (press Enter to keep current): ");
+        String name = scanner.nextLine().trim();
+        if (!name.isEmpty()) existing.setProductName(name);
+
+        System.out.print("New price (press Enter to keep current): ");
+        String priceInput = scanner.nextLine().trim();
+        if (!priceInput.isEmpty()) {
+            try {
+                existing.setPrice(Double.parseDouble(priceInput));
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid price, keeping current value.");
+            }
+        }
+
+        System.out.print("Update availability? (true/false, or press Enter to keep): ");
+        String availInput = scanner.nextLine().trim();
+        if (!availInput.isEmpty()) {
+            existing.setAvailable(Boolean.parseBoolean(availInput));
+        }
+
+        admin.updateProduct(catalogue, productId, existing);
+    }
+
+    /**
+     * Handles the add promotion flow for administrators.
+     * Prompts for promotion type and details, creates the appropriate
+     * DiscountStrategy, and wraps it in a new Promotion object.
+     */
+        private void addPromotionFlow() {
+        System.out.println("\n===== Add New Promotion =====");
+        System.out.print("Enter promotion ID: ");
+        String id = scanner.nextLine().trim();
+        System.out.print("Enter promotion name: ");
+        String name = scanner.nextLine().trim();
+        System.out.println("Discount type: 1. Percentage  2. Flat Amount");
+        System.out.print("Enter type: ");
+        String type = scanner.nextLine().trim();
+
+        DiscountStrategy strategy;
+        if (type.equals("1")) {
+            System.out.print("Enter percentage (e.g. 10 for 10%): ");
+            try {
+                double rate = Double.parseDouble(scanner.nextLine().trim()) / 100;
+                strategy = new PercentageDiscount(rate);
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid percentage. Promotion not added.");
                 return;
             }
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid quantity. Please enter a whole number.");
+        } else if (type.equals("2")) {
+            System.out.print("Enter flat discount amount (RM): ");
+            try {
+                double amount = Double.parseDouble(scanner.nextLine().trim());
+                strategy = new FlatDiscount(amount);
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid amount. Promotion not added.");
+                return;
+            }
+        } else {
+            System.out.println("Invalid type. Promotion not added.");
             return;
         }
 
-        String orderId = "ORD" + (System.currentTimeMillis() % 10000);
-        Order newOrder = new Order(orderId, customer, java.time.LocalDate.now().toString());
-        newOrder.addItem(new OrderItem(p, qty));
-
-        customer.placeOrder(newOrder);
-        newOrder.displayOrderSummary();
+        Promotion promo = new Promotion(id, name, strategy);
+        promotionCatalogue.addPromotion(promo);
+        System.out.println("Promotion added successfully: " + name);
     }
 }
