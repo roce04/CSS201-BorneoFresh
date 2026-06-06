@@ -89,6 +89,16 @@ git commit -m "[ClassName] Brief description of change"
 This keeps the commit history clean and traceable to a single class 
 per commit.
 
+If you want to keep commits separate per class, stage individual files 
+rather than using `git add .`. For example:
+
+```bash
+git add src/borneofresh/model/ClassName.java
+git commit -m "[ClassName] Brief description of change"
+```
+
+This keeps the commit history clean and traceable to a single class 
+per commit.
 ---
 
 ## Commit Message Format
