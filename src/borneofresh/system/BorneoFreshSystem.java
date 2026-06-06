@@ -1,260 +1,298 @@
 package borneofresh.system;
 
+import borneofresh.model.*;
 import borneofresh.model.Administrator;
 import borneofresh.model.Customer;
+import borneofresh.model.DailyEssential;
+import borneofresh.model.FreshProduce;
+import borneofresh.model.Order;
+import borneofresh.model.OrderItem;
+import borneofresh.model.OrganicProduct;
 import borneofresh.model.Product;
 import borneofresh.model.User;
+
 import java.util.Scanner;
 
 /**
- * The main entry point and controller of the BorneoFresh Market system.
- * This class manages the top-level menu flow, handles user authentication,
- * and delegates actions to the appropriate modules based on the authenticated
- * user's role.
+ * Main entry point and controller of the BorneoFresh Market application.
+ *
+ * Responsibilities:
+ *   - Owns the single ProductCatalogue and CustomerRegistry instances.
+ *   - Drives all console menus (main, admin, customer).
+ *   - Delegates business logic to the appropriate model/system classes
+ *     rather than implementing it inline.
+ *
+ * A single Scanner on System.in is created here and reused throughout.
+ * Opening multiple Scanners on the same stream causes problems because
+ * closing one closes the underlying stream for all of them.
  */
 public class BorneoFreshSystem {
 
+    // --- Attributes ---
     private ProductCatalogue catalogue;
     private CustomerRegistry registry;
     private Scanner scanner;
 
-    /**
-     * Constructs a new BorneoFreshSystem, initialising the product catalogue,
-     * customer registry, and the shared scanner for console input.
-     */
+    // Hardcoded admin credentials — in a real system these would come
+    // from a secure configuration source, not be embedded in source code.
+    private static final String ADMIN_USERNAME = "admin";
+    private static final String ADMIN_PASSWORD = "admin123";
+    private static final String ADMIN_ID       = "A001";
+
+    // --- Constructor ---
     public BorneoFreshSystem() {
         this.catalogue = new ProductCatalogue();
-        this.registry = new CustomerRegistry();
-        this.scanner = new Scanner(System.in);
+        this.registry  = new CustomerRegistry();
+        this.scanner   = new Scanner(System.in);
+        seedData();
     }
 
-    /**
-     * The application entry point. Creates a BorneoFreshSystem instance
-     * and launches the main menu.
-     *
-     * @param args command-line arguments (not used)
-     */
+    // --- Entry point ---
     public static void main(String[] args) {
         BorneoFreshSystem system = new BorneoFreshSystem();
         system.showMainMenu();
     }
 
+    // --- Seed data ---
     /**
-     * Displays the top-level menu and continues running until the user
-     * enters 'E' to exit. Provides options to log in or register as
-     * a new customer.
+     * Populates the system with a small set of demo products and one demo
+     * customer so the application is usable immediately on first run.
+     * Customer constructor signature: (username, password, customerId, fullName, email)
+     */
+    private void seedData() {
+        catalogue.addProduct(new FreshProduce("P01", "Apple",           2.50, true,  "2025-12-31"));
+        catalogue.addProduct(new FreshProduce("P02", "Banana",          1.80, true,  "2025-11-15"));
+        catalogue.addProduct(new OrganicProduct("P03", "Organic Spinach", 4.00, true, "ORG-9921"));
+        catalogue.addProduct(new DailyEssential("P04", "Milk",           3.20, true,  "1 Liter"));
+        catalogue.addProduct(new DailyEssential("P05", "Eggs",           5.50, true,  "12 pieces"));
+
+        // Demo customer — password is "pass123"
+        registry.registerCustomer(
+            new Customer("johndoe", "pass123", "C001", "John Doe", "john@email.com")
+        );
+    }
+
+    // --- Menus ---
+
+    /**
+     * Top-level menu. Keeps running until the user chooses to exit.
+     * After a successful login, control is delegated to either
+     * showAdminMenu() or showCustomerMenu() before returning here.
      */
     public void showMainMenu() {
-        String choice;
-        do {
-            System.out.println("\n===== Welcome to BorneoFresh Market =====");
+        boolean running = true;
+
+        while (running) {
+            System.out.println("\n=== Welcome to Borneo Fresh Market ===");
             System.out.println("1. Login");
-            System.out.println("2. Register as Customer");
-            System.out.println("E. Exit");
-            System.out.print("Enter your choice: ");
-            choice = scanner.nextLine().trim().toUpperCase();
+            System.out.println("2. Register as new Customer");
+            System.out.println("3. Exit");
+            System.out.print("Select an option: ");
+
+            String choice = scanner.nextLine().trim();
 
             switch (choice) {
-                case "1" -> handleLogin();
-                case "2" -> registry.registerCustomer(scanner);
-                case "E" -> System.out.println("Thank you for using BorneoFresh Market. Goodbye!");
-                default -> System.out.println("Invalid option. Please try again.");
-            }
-        } while (!choice.equals("E"));
+                case "1":
+                    User loggedInUser = handleLogin();
+                    if (loggedInUser instanceof Administrator) {
+                        showAdminMenu((Administrator) loggedInUser);
+                    } else if (loggedInUser instanceof Customer) {
+                        showCustomerMenu((Customer) loggedInUser);
+                    } else {
+                        System.out.println("Login failed. Incorrect username or password.");
+                    }
+                    break;
 
+                case "2":
+                    handleRegistration();
+                    break;
+
+                case "3":
+                    System.out.println("Exiting system. Goodbye!");
+                    running = false;
+                    break;
+
+                default:
+                    System.out.println("Invalid option. Please enter 1, 2, or 3.");
+            }
+        }
+
+        // Close the scanner only when the application is truly finished
+        // to avoid closing System.in prematurely.
         scanner.close();
     }
 
     /**
-     * Prompts the user for a username and password, validates the credentials
-     * against the predefined administrator account and the customer registry,
-     * and redirects the authenticated user to the appropriate menu.
+     * Prompts the user for credentials and returns the matching User.
      *
-     * @return the authenticated User object, or null if authentication fails
+     * Admin login is handled separately from customer login because
+     * admins are not stored in the CustomerRegistry. If the entered
+     * username matches the hardcoded admin username AND the password
+     * matches, a new Administrator instance is returned. Otherwise
+     * the registry is queried, which also validates the password.
+     * Returns null if authentication fails.
      */
     public User handleLogin() {
-        System.out.print("Enter username: ");
+        System.out.println("\n--- Login ---");
+        System.out.print("Username: ");
         String username = scanner.nextLine().trim();
-        System.out.print("Enter password: ");
+        System.out.print("Password: ");
         String password = scanner.nextLine().trim();
 
-        if (username.equals("admin") && password.equals("admin123")) {
-            Administrator admin = new Administrator("A001", username, password);
-            System.out.println("Welcome, Administrator!");
-            showAdminMenu(admin);
-            return admin;
+        // Check for admin first
+        if (ADMIN_USERNAME.equals(username) && ADMIN_PASSWORD.equals(password)) {
+            return new Administrator(ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_ID);
         }
 
-        Customer customer = registry.getCustomerByUsername(username);
-        if (customer != null && customer.getPassword().equals(password)) {
-            System.out.println("Welcome, " + customer.getFullName() + "!");
-            showCustomerMenu(customer);
-            return customer;
-        }
-
-        System.out.println("Invalid username or password. Please try again.");
-        return null;
+        // Delegate customer credential check to the registry
+        return registry.login(username, password);
     }
 
     /**
-     * Displays the Administrator Module menu and handles all administrator
-     * actions, including adding, updating, and viewing products.
-     *
-     * @param admin the authenticated Administrator
+     * Collects registration details, validates the username is not taken,
+     * then creates and registers the new Customer.
      */
-    public void showAdminMenu(Administrator admin) {
-        String choice;
-        do {
-            System.out.println("\n===== Administrator Menu =====");
-            System.out.println("1. Add Product");
-            System.out.println("2. Update Product");
-            System.out.println("3. View Available Products");
-            System.out.println("4. View Unavailable Products");
-            System.out.println("5. View All Products");
-            System.out.println("E. Logout");
-            System.out.print("Enter your choice: ");
-            choice = scanner.nextLine().trim().toUpperCase();
+    private void handleRegistration() {
+        System.out.println("\n--- Customer Registration ---");
 
-            switch (choice) {
-                case "1" -> addProductFlow(admin);
-                case "2" -> updateProductFlow(admin);
-                case "3" -> catalogue.getAvailableProducts()
-                                     .forEach(Product::displayInfo);
-                case "4" -> catalogue.getUnavailableProducts()
-                                     .forEach(Product::displayInfo);
-                case "5" -> admin.viewProducts(catalogue);
-                case "E" -> System.out.println("Logging out...");
-                default  -> System.out.println("Invalid option. Please try again.");
-            }
-        } while (!choice.equals("E"));
-    }
+        System.out.print("Choose a username: ");
+        String username = scanner.nextLine().trim();
 
-    /**
-     * Displays the Customer Module menu and handles all customer actions,
-     * including product browsing, order placement, order history viewing,
-     * and account management.
-     *
-     * @param customer the authenticated Customer
-     */
-    public void showCustomerMenu(Customer customer) {
-        String choice;
-        do {
-            System.out.println("\n===== Customer Menu =====");
-            System.out.println("1. View All Available Products");
-            System.out.println("2. Browse Products by Category");
-            System.out.println("3. Place an Order");
-            System.out.println("4. View Order History");
-            System.out.println("5. View My Account");
-            System.out.println("6. Update My Account");
-            System.out.println("E. Logout");
-            System.out.print("Enter your choice: ");
-            choice = scanner.nextLine().trim().toUpperCase();
-
-            switch (choice) {
-                case "1" -> catalogue.getAvailableProducts()
-                                     .forEach(Product::displayInfo);
-                case "2" -> browseByCategory();
-                case "3" -> customer.placeOrder(catalogue, scanner);
-                case "4" -> customer.viewOrderHistory();
-                case "5" -> customer.displayInfo();
-                case "6" -> customer.updateAccount(scanner);
-                case "E" -> System.out.println("Logging out...");
-                default  -> System.out.println("Invalid option. Please try again.");
-            }
-        } while (!choice.equals("E"));
-    }
-
-    /**
-     * Prompts the administrator to enter product details and adds the
-     * new product to the catalogue.
-     *
-     * @param admin the authenticated Administrator
-     */
-    private void addProductFlow(Administrator admin) {
-        System.out.print("Enter product type (1: Fresh Produce, " +
-                         "2: Organic Product, 3: Daily Essential): ");
-        String type = scanner.nextLine().trim();
-        System.out.print("Enter product ID: ");
-        String id = scanner.nextLine().trim();
-        System.out.print("Enter product name: ");
-        String name = scanner.nextLine().trim();
-        System.out.print("Enter price: ");
-        double price = Double.parseDouble(scanner.nextLine().trim());
-        System.out.print("Is available? (true/false): ");
-        boolean available = Boolean.parseBoolean(scanner.nextLine().trim());
-
-        Product product = switch (type) {
-            case "1" -> {
-                System.out.print("Enter expiry date: ");
-                String expiry = scanner.nextLine().trim();
-                yield new borneofresh.model.FreshProduce(
-                        id, name, price, available, expiry);
-            }
-            case "2" -> {
-                System.out.print("Enter certification code: ");
-                String code = scanner.nextLine().trim();
-                yield new borneofresh.model.OrganicProduct(
-                        id, name, price, available, code);
-            }
-            case "3" -> {
-                System.out.print("Enter unit (e.g. 500ml, 1kg): ");
-                String unit = scanner.nextLine().trim();
-                yield new borneofresh.model.DailyEssential(
-                        id, name, price, available, unit);
-            }
-            default -> null;
-        };
-
-        if (product != null) {
-            admin.addProduct(catalogue, product);
-        } else {
-            System.out.println("Invalid product type.");
-        }
-    }
-
-    /**
-     * Prompts the administrator to enter the ID of a product to update
-     * and collects the updated details.
-     *
-     * @param admin the authenticated Administrator
-     */
-    private void updateProductFlow(Administrator admin) {
-        System.out.print("Enter the product ID to update: ");
-        String productId = scanner.nextLine().trim();
-        Product existing = catalogue.getProductById(productId);
-
-        if (existing == null) {
-            System.out.println("Product not found.");
+        if (registry.isUsernameTaken(username)) {
+            System.out.println("That username is already taken. Please try a different one.");
             return;
         }
 
-        System.out.print("Enter new name (or press Enter to keep current): ");
+        System.out.print("Choose a password: ");
+        String password = scanner.nextLine().trim();
+        System.out.print("Customer ID: ");
+        String id = scanner.nextLine().trim();
+        System.out.print("Full Name: ");
         String name = scanner.nextLine().trim();
-        if (!name.isEmpty()) existing.setProductName(name);
+        System.out.print("Email: ");
+        String email = scanner.nextLine().trim();
 
-        System.out.print("Enter new price (or 0 to keep current): ");
-        String priceInput = scanner.nextLine().trim();
-        if (!priceInput.equals("0")) existing.setPrice(
-                Double.parseDouble(priceInput));
-
-        System.out.print("Update availability? (true/false, or press " +
-                         "Enter to keep current): ");
-        String availInput = scanner.nextLine().trim();
-        if (!availInput.isEmpty()) existing.setAvailable(
-                Boolean.parseBoolean(availInput));
-
-        admin.updateProduct(catalogue, productId, existing);
+        Customer newCustomer = new Customer(username, password, id, name, email);
+        registry.registerCustomer(newCustomer);
     }
 
     /**
-     * Prompts the customer to enter a category and displays all matching
-     * available products.
+     * Displays and handles the Administrator dashboard.
+     * Loops until the admin logs out.
      */
-    private void browseByCategory() {
-        System.out.println("Categories: Fresh Produce, " +
-                           "Organic Product, Daily Essential");
-        System.out.print("Enter category: ");
-        String category = scanner.nextLine().trim();
-        catalogue.getProductsByCategory(category).forEach(Product::displayInfo);
+    public void showAdminMenu(Administrator admin) {
+        boolean adminRunning = true;
+
+        while (adminRunning) {
+            System.out.println("\n=== Administrator Dashboard ===");
+            System.out.println("Logged in as Admin: " + admin.getAdminId());
+            System.out.println("1. View All Products");
+            System.out.println("2. View Registered Customers");
+            System.out.println("3. Logout");
+            System.out.print("Select an option: ");
+
+            String choice = scanner.nextLine().trim();
+
+            switch (choice) {
+                case "1":
+                    admin.viewProducts(catalogue);
+                    break;
+                case "2":
+                    registry.displayAllCustomers();
+                    break;
+                case "3":
+                    System.out.println("Logging out admin...");
+                    adminRunning = false;
+                    break;
+                default:
+                    System.out.println("Invalid option. Please enter 1, 2, or 3.");
+            }
+        }
+    }
+
+    /**
+     * Displays and handles the Customer dashboard.
+     * Loops until the customer logs out.
+     */
+    public void showCustomerMenu(Customer customer) {
+        boolean customerRunning = true;
+
+        while (customerRunning) {
+            System.out.println("\n=== Customer Dashboard ===");
+            System.out.println("Welcome back, " + customer.getFullName() + "!");
+            System.out.println("1. Browse Products");
+            System.out.println("2. Place an Order");
+            System.out.println("3. View Order History");
+            System.out.println("4. Logout");
+            System.out.print("Select an option: ");
+
+            String choice = scanner.nextLine().trim();
+
+            switch (choice) {
+                case "1":
+                    catalogue.displayAllProducts();
+                    break;
+                case "2":
+                    placeOrder(customer);
+                    break;
+                case "3":
+                    customer.viewOrderHistory();
+                    break;
+                case "4":
+                    System.out.println("Logging out...");
+                    customerRunning = false;
+                    break;
+                default:
+                    System.out.println("Invalid option. Please enter 1, 2, 3, or 4.");
+            }
+        }
+    }
+
+    /**
+     * Guides the customer through selecting a product and quantity,
+     * creates an Order with one OrderItem, and records it in the
+     * customer's order history.
+     *
+     * Order ID is generated from the last four digits of the current
+     * timestamp — sufficient for a demo; a UUID would be better in
+     * a production system.
+     */
+    private void placeOrder(Customer customer) {
+        System.out.println("\n--- Place an Order ---");
+        catalogue.displayAllProducts();
+
+        System.out.print("Enter the Product ID you want to buy: ");
+        String productId = scanner.nextLine().trim();
+
+        Product p = catalogue.getProductById(productId);
+        if (p == null) {
+            System.out.println("Product not found. Please check the ID and try again.");
+            return;
+        }
+
+        if (!p.isAvailable()) {
+            System.out.println("Sorry, that product is currently unavailable.");
+            return;
+        }
+
+        System.out.print("Enter quantity: ");
+        int qty;
+        try {
+            qty = Integer.parseInt(scanner.nextLine().trim());
+            if (qty <= 0) {
+                System.out.println("Quantity must be greater than zero.");
+                return;
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid quantity. Please enter a whole number.");
+            return;
+        }
+
+        String orderId = "ORD" + (System.currentTimeMillis() % 10000);
+        Order newOrder = new Order(orderId, customer, java.time.LocalDate.now().toString());
+        newOrder.addItem(new OrderItem(p, qty));
+
+        customer.placeOrder(newOrder);
+        newOrder.displayOrderSummary();
     }
 }
